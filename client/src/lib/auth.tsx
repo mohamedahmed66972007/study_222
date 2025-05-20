@@ -1,0 +1,109 @@
+import { createContext, useState, useContext, useEffect, ReactNode } from "react";
+import { apiRequest } from "./queryClient";
+
+export interface AdminUser {
+  id: number;
+  username: string;
+}
+
+interface AuthContextType {
+  isAuthenticated: boolean;
+  user: AdminUser | null;
+  login: (username: string, password: string) => Promise<boolean>;
+  logout: () => void;
+  isLoading: boolean;
+}
+
+export const AuthContext = createContext<AuthContextType>({
+  isAuthenticated: false,
+  user: null,
+  login: async () => false,
+  logout: () => {},
+  isLoading: true,
+});
+
+export function AuthProvider({ children }: { children: ReactNode }): JSX.Element {
+  const [user, setUser] = useState<AdminUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const savedUser = localStorage.getItem("adminUser");
+    
+    if (savedUser) {
+      try {
+        const parsedUser = JSON.parse(savedUser);
+        setUser(parsedUser);
+      } catch (error) {
+        console.error("Failed to parse saved user:", error);
+        localStorage.removeItem("adminUser");
+      }
+    }
+    
+    setIsLoading(false);
+  }, []);
+
+  const login = async (username: string, password: string): Promise<boolean> => {
+    try {
+      const response = await apiRequest("POST", "/api/auth/login", { username, password });
+      const data = await response.json();
+      
+      if (data.user) {
+        setUser(data.user);
+        localStorage.setItem("adminUser", JSON.stringify(data.user));
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error("Login error:", error);
+      return false;
+    }
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem("adminUser");
+  };
+
+  return (
+    <AuthContext.Provider
+      value={{
+        isAuthenticated: !!user,
+        user,
+        login,
+        logout,
+        isLoading
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  return useContext(AuthContext);
+}
+
+// Create a basic auth header for API requests
+export function getAuthHeader(): HeadersInit {
+  const savedUser = localStorage.getItem("adminUser");
+  
+  if (!savedUser) {
+    return {};
+  }
+  
+  try {
+    const { username } = JSON.parse(savedUser);
+    // Fixed admin credentials
+    const password = "mohamed_admen_mo2025#";
+    const base64Credentials = btoa(`${username}:${password}`);
+    
+    return {
+      Authorization: `Basic ${base64Credentials}`,
+    };
+  } catch (error) {
+    console.error("Failed to create auth header:", error);
+    return {};
+  }
+}
